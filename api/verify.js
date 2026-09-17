@@ -8,24 +8,46 @@ module.exports = (req, res) => {
     }
 
     if (req.method === 'GET') {
-        return res.status(200).json({ status: "Server is running successfully!" });
+        return res.status(200).json({
+            status: "Server is running successfully!"
+        });
     }
 
     if (req.method !== 'POST') {
-        return res.status(405).json({ active: false, message: 'Method not allowed' });
+        return res.status(405).json({
+            active: false,
+            message: 'Method not allowed'
+        });
     }
 
     let body = req.body;
+
     if (typeof body === 'string') {
-        try { body = JSON.parse(body); } catch (e) { body = {}; }
+        try {
+            body = JSON.parse(body);
+        } catch (e) {
+            body = {};
+        }
     }
 
-    const serial = body && body.serial ? body.serial : null;
-    const validSerials = ["AHMED-VIP-2026", "NEXA-PRO-999"];
+    const serial = body && body.serial
+        ? String(body.serial).trim()
+        : null;
 
-    if (serial && validSerials.includes(serial.trim())) {
-        return res.status(200).json({ active: true, message: "License is active!" });
-    } else {
-        return res.status(200).json({ active: false, message: "Invalid serial key!" });
+    const validSerials = (process.env.VALID_SERIALS || '')
+        .split(',')
+        .map(key => key.trim())
+        .filter(Boolean);
+
+    if (serial && validSerials.includes(serial)) {
+        return res.status(200).json({
+            active: true,
+            message: "License is active!"
+        });
     }
+
+    return res.status(200).json({
+        active: false,
+        message: "Invalid serial key!"
+    });
 };
