@@ -13,7 +13,6 @@ module.exports = (req, res) => {
     }
 
     if (req.method === 'POST') {
-        // Handle parsing body safely in Vercel serverless
         let body = req.body;
         if (typeof body === 'string') {
             try {
