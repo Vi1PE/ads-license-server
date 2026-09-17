@@ -28,9 +28,9 @@ app.post('/api/verify', (req, res) => {
     ];
 
     if (serial && validSerials.includes(serial.trim())) {
-        return.status(200).json({ active: true, message: "License is active!" });
+        return res.status(200).json({ active: true, message: "License is active!" });
     } else {
-        return.status(200).json({ active: false, message: "Invalid serial key!" });
+        return res.status(200).json({ active: false, message: "Invalid serial key!" });
     }
 });
 
