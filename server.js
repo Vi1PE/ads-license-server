@@ -1,27 +1,40 @@
 const express = require('express');
-const cors = require('cors');
 const app = express();
 
 app.use(express.json());
-app.use(cors());
 
-//قاعدة بيانات مؤقتة للمفاتيح (تقدر تعدلها أو تضيف مفاتيح براحتك)
-const validKeys = {
-    "VIP-AHMED-2026": { active: true, expires: "2026-12-31" },
-    "TEST-KEY-123": { active: true, expires: "2026-10-01" }
-};
+// CORS headers
+app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    next();
+});
 
+// Health check endpoint
+app.get('/api/verify', (req, res) => {
+    res.status(200).json({ status: "Server is running successfully!" });
+});
+
+// Verification endpoint
 app.post('/api/verify', (req, res) => {
-    const { key } = req.body;
-    
-    if (validKeys[key] && validKeys[key].active) {
-        return res.json({ valid: true, message: "Key is active" });
+    const { serial } = req.body || {};
+    const validSerials = [
+        "AHMED-VIP-2026",
+        "NEXA-PRO-999"
+    ];
+
+    if (serial && validSerials.includes(serial.trim())) {
+        return.status(200).json({ active: true, message: "License is active!" });
     } else {
-        return res.json({ valid: false, message: "Invalid or expired key" });
+        return.status(200).json({ active: false, message: "Invalid serial key!" });
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+module.exports = app;
