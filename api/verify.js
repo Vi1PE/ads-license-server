@@ -1,4 +1,4 @@
-module.exports = (req, res) => {
+module.exports = async (req, res) => {
     // CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -13,25 +13,38 @@ module.exports = (req, res) => {
     }
 
     if (req.method === 'POST') {
-        let body = req.body;
-        if (typeof body === 'string') {
-            try {
+        try {
+            // قراءة الـ Body بأمان تام سواء وصل كـ Object جاهز أو String
+            let body = req.body;
+            if (typeof body === 'string') {
                 body = JSON.parse(body);
-            } catch (e) {
-                body = {};
             }
-        }
-        
-        const serial = body && body.serial ? body.serial : null;
-        const validSerials = [
-            "AHMED-VIP-2026",
-            "NEXA-PRO-999"
-        ];
+            
+            // لو الـ body لسه فاضي، نقرأه من الـ stream مباشرة
+            if (!body || Object.keys(body).length === 0) {
+                const buffers = [];
+                for await (const chunk of req) {
+                    buffers.push(chunk);
+                }
+                const rawData = Buffer.concat(buffers).toString();
+                if (rawData) {
+                    body = JSON.parse(rawData);
+                }
+            }
 
-        if (serial && validSerials.includes(serial.trim())) {
-            return res.status(200).json({ active: true, message: "License is active!" });
-        } else {
-            return res.status(200).json({ active: false, message: "Invalid serial key!" });
+            const serial = body && body.serial ? body.serial : null;
+            const validSerials = [
+                "AHMED-VIP-2026",
+                "NEXA-PRO-999"
+            ];
+
+            if (serial && validSerials.includes(serial.trim())) {
+                return res.status(200).json({ active: true, message: "License is active!" });
+            } else {
+                return res.status(200).json({ active: false, message: "Invalid or expired serial key!" });
+            }
+        } catch (error) {
+            return res.status(400).json({ active: false, message: "Invalid request payload!" });
         }
     }
 
