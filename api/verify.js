@@ -9,7 +9,7 @@ module.exports = async (req, res) => {
 
     if (req.method === 'GET') {
         return res.status(200).json({
-            status: "License server is running successfully!"
+            status: 'License server is running successfully!'
         });
     }
 
@@ -46,8 +46,18 @@ module.exports = async (req, res) => {
             });
         }
 
-        const supabaseUrl = 'https://gixfqijvxamnfbyaxdns.supabase.co';
-        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        if (!deviceId) {
+            return res.status(400).json({
+                active: false,
+                message: 'Device ID is required.'
+            });
+        }
+
+        const supabaseUrl =
+            'https://gixfqijvxamnfbyaxdns.supabase.co';
+
+        const serviceKey =
+            process.env.SUPABASE_SERVICE_ROLE_KEY;
 
         if (!serviceKey) {
             return res.status(500).json({
@@ -57,12 +67,15 @@ module.exports = async (req, res) => {
         }
 
         const headers = {
-            'apikey': serviceKey,
-            'Authorization': `Bearer ${serviceKey}`,
+            apikey: serviceKey,
+            Authorization: `Bearer ${serviceKey}`,
             'Content-Type': 'application/json'
         };
 
-        // Find license
+        // ----------------------------------------
+        // FIND LICENSE
+        // ----------------------------------------
+
         const findUrl =
             `${supabaseUrl}/rest/v1/licenses` +
             `?select=*` +
@@ -93,7 +106,10 @@ module.exports = async (req, res) => {
         const license = licenses[0];
         const now = new Date();
 
-        // Disabled license
+        // ----------------------------------------
+        // CHECK ACTIVE
+        // ----------------------------------------
+
         if (license.is_active !== true) {
             return res.status(200).json({
                 active: false,
@@ -101,7 +117,10 @@ module.exports = async (req, res) => {
             });
         }
 
-        // Not started yet
+        // ----------------------------------------
+        // CHECK START DATE
+        // ----------------------------------------
+
         if (license.starts_at) {
             const startsAt = new Date(license.starts_at);
 
@@ -113,7 +132,10 @@ module.exports = async (req, res) => {
             }
         }
 
-        // Expired license
+        // ----------------------------------------
+        // CHECK EXPIRATION
+        // ----------------------------------------
+
         if (license.expires_at) {
             const expiresAt = new Date(license.expires_at);
 
@@ -125,10 +147,48 @@ module.exports = async (req, res) => {
             }
         }
 
-        // Update usage information
-        const newUsageCount = Number(license.usage_count || 0) + 1;
+        // ----------------------------------------
+        // DEVICE MANAGEMENT
+        // ----------------------------------------
+
+        let deviceIds = Array.isArray(license.device_ids)
+            ? license.device_ids
+            : [];
+
+        const maxDevices = Number(license.max_devices || 1);
+
+        const existingDevice =
+            deviceIds.includes(deviceId);
+
+        // Device already registered
+        if (!existingDevice) {
+
+            // Maximum devices reached
+            if (deviceIds.length >= maxDevices) {
+                return res.status(200).json({
+                    active: false,
+                    message: 'Maximum number of devices reached.',
+                    max_devices: maxDevices,
+                    device_count: deviceIds.length
+                });
+            }
+
+            // Register new device
+            deviceIds = [...deviceIds, deviceId];
+        }
+
+        const newDeviceCount = deviceIds.length;
+
+        // ----------------------------------------
+        // UPDATE USAGE + DEVICE
+        // ----------------------------------------
+
+        const newUsageCount =
+            Number(license.usage_count || 0) + 1;
 
         const updateData = {
+            device_ids: deviceIds,
+            device_count: newDeviceCount,
             last_used_at: now.toISOString(),
             usage_count: newUsageCount
         };
@@ -140,7 +200,7 @@ module.exports = async (req, res) => {
             method: 'PATCH',
             headers: {
                 ...headers,
-                'Prefer': 'return=minimal'
+                Prefer: 'return=minimal'
             },
             body: JSON.stringify(updateData)
         });
@@ -148,23 +208,35 @@ module.exports = async (req, res) => {
         if (!updateResponse.ok) {
             return res.status(500).json({
                 active: false,
-                message: 'Could not update license usage.'
+                message: 'Could not update license information.'
             });
         }
+
+        // ----------------------------------------
+        // LICENSE ACTIVE
+        // ----------------------------------------
 
         return res.status(200).json({
             active: true,
             message: 'License is active!',
+
             client_name: license.client_name || '',
+
             starts_at: license.starts_at,
             expires_at: license.expires_at,
-            max_devices: license.max_devices,
-            device_count: license.device_count,
+
+            max_devices: maxDevices,
+            device_count: newDeviceCount,
+
             usage_count: newUsageCount
         });
 
     } catch (error) {
-        console.error('License verification error:', error);
+
+        console.error(
+            'License verification error:',
+            error
+        );
 
         return res.status(500).json({
             active: false,
