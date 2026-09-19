@@ -1,17 +1,45 @@
 module.exports = async (req, res) => {
+    // ========================================
+    // CORS
+    // ========================================
+
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader(
+        'Access-Control-Allow-Methods',
+        'GET, POST, OPTIONS'
+    );
+    res.setHeader(
+        'Access-Control-Allow-Headers',
+        'Content-Type, Authorization'
+    );
+    res.setHeader(
+        'Access-Control-Max-Age',
+        '86400'
+    );
+
+    // ========================================
+    // PREFLIGHT
+    // ========================================
 
     if (req.method === 'OPTIONS') {
-        return res.status(200).end();
+        return res.status(204).end();
     }
+
+    // ========================================
+    // SERVER TEST
+    // ========================================
 
     if (req.method === 'GET') {
         return res.status(200).json({
-            status: 'License server is running successfully!'
+            status: 'License server is running successfully!',
+            endpoint: '/api/verify',
+            methods: ['GET', 'POST']
         });
     }
+
+    // ========================================
+    // METHOD CHECK
+    // ========================================
 
     if (req.method !== 'POST') {
         return res.status(405).json({
@@ -21,6 +49,11 @@ module.exports = async (req, res) => {
     }
 
     try {
+
+        // ========================================
+        // READ BODY
+        // ========================================
+
         let body = req.body;
 
         if (typeof body === 'string') {
@@ -31,13 +64,29 @@ module.exports = async (req, res) => {
             }
         }
 
+        if (!body || typeof body !== 'object') {
+            body = {};
+        }
+
+        // ========================================
+        // LICENSE KEY
+        // ========================================
+
         const serial = body?.serial
             ? String(body.serial).trim()
             : null;
 
+        // ========================================
+        // DEVICE ID
+        // ========================================
+
         const deviceId = body?.device_id
             ? String(body.device_id).trim()
             : null;
+
+        // ========================================
+        // REQUIRED DATA
+        // ========================================
 
         if (!serial) {
             return res.status(400).json({
@@ -53,6 +102,10 @@ module.exports = async (req, res) => {
             });
         }
 
+        // ========================================
+        // SUPABASE
+        // ========================================
+
         const supabaseUrl =
             'https://gixfqijvxamnfbyaxdns.supabase.co';
 
@@ -60,6 +113,10 @@ module.exports = async (req, res) => {
             process.env.SUPABASE_SERVICE_ROLE_KEY;
 
         if (!serviceKey) {
+            console.error(
+                'SUPABASE_SERVICE_ROLE_KEY is missing.'
+            );
+
             return res.status(500).json({
                 active: false,
                 message: 'Server configuration error.'
@@ -72,9 +129,9 @@ module.exports = async (req, res) => {
             'Content-Type': 'application/json'
         };
 
-        // ----------------------------------------
+        // ========================================
         // FIND LICENSE
-        // ----------------------------------------
+        // ========================================
 
         const findUrl =
             `${supabaseUrl}/rest/v1/licenses` +
@@ -82,21 +139,42 @@ module.exports = async (req, res) => {
             `&license_key=eq.${encodeURIComponent(serial)}` +
             `&limit=1`;
 
-        const findResponse = await fetch(findUrl, {
-            method: 'GET',
-            headers
-        });
+        const findResponse = await fetch(
+            findUrl,
+            {
+                method: 'GET',
+                headers
+            }
+        );
 
         if (!findResponse.ok) {
+
+            const databaseError =
+                await findResponse.text().catch(() => '');
+
+            console.error(
+                'License database error:',
+                databaseError
+            );
+
             return res.status(500).json({
                 active: false,
-                message: 'Could not connect to license database.'
+                message:
+                    'Could not connect to license database.'
             });
         }
 
-        const licenses = await findResponse.json();
+        const licenses =
+            await findResponse.json();
 
-        if (!Array.isArray(licenses) || licenses.length === 0) {
+        // ========================================
+        // LICENSE NOT FOUND
+        // ========================================
+
+        if (
+            !Array.isArray(licenses) ||
+            licenses.length === 0
+        ) {
             return res.status(200).json({
                 active: false,
                 message: 'Invalid serial key!'
@@ -104,84 +182,102 @@ module.exports = async (req, res) => {
         }
 
         const license = licenses[0];
+
         const now = new Date();
 
-        // ----------------------------------------
+        // ========================================
         // CHECK ACTIVE
-        // ----------------------------------------
+        // ========================================
 
         if (license.is_active !== true) {
             return res.status(200).json({
                 active: false,
-                message: 'This license has been disabled.'
+                message:
+                    'This license has been disabled.'
             });
         }
 
-        // ----------------------------------------
+        // ========================================
         // CHECK START DATE
-        // ----------------------------------------
+        // ========================================
 
         if (license.starts_at) {
-            const startsAt = new Date(license.starts_at);
+
+            const startsAt =
+                new Date(license.starts_at);
 
             if (now < startsAt) {
                 return res.status(200).json({
                     active: false,
-                    message: 'This license has not started yet.'
+                    message:
+                        'This license has not started yet.'
                 });
             }
         }
 
-        // ----------------------------------------
+        // ========================================
         // CHECK EXPIRATION
-        // ----------------------------------------
+        // ========================================
 
         if (license.expires_at) {
-            const expiresAt = new Date(license.expires_at);
+
+            const expiresAt =
+                new Date(license.expires_at);
 
             if (now >= expiresAt) {
                 return res.status(200).json({
                     active: false,
-                    message: 'This license has expired.'
+                    message:
+                        'This license has expired.'
                 });
             }
         }
 
-        // ----------------------------------------
+        // ========================================
         // DEVICE MANAGEMENT
-        // ----------------------------------------
+        // ========================================
 
-        let deviceIds = Array.isArray(license.device_ids)
-            ? license.device_ids
-            : [];
+        let deviceIds =
+            Array.isArray(license.device_ids)
+                ? license.device_ids
+                : [];
 
-        const maxDevices = Number(license.max_devices || 1);
+        const maxDevices =
+            Number(license.max_devices || 1);
 
         const existingDevice =
             deviceIds.includes(deviceId);
 
-        // Device already registered
+        // ========================================
+        // REGISTER NEW DEVICE
+        // ========================================
+
         if (!existingDevice) {
 
-            // Maximum devices reached
             if (deviceIds.length >= maxDevices) {
+
                 return res.status(200).json({
                     active: false,
-                    message: 'Maximum number of devices reached.',
+                    message:
+                        'Maximum number of devices reached.',
                     max_devices: maxDevices,
-                    device_count: deviceIds.length
+                    device_count:
+                        deviceIds.length
                 });
             }
 
-            // Register new device
-            deviceIds = [...deviceIds, deviceId];
+            deviceIds = [
+                ...deviceIds,
+                deviceId
+            ];
         }
 
-        const newDeviceCount = deviceIds.length;
+        const newDeviceCount =
+            deviceIds.length;
 
-        // ----------------------------------------
-        // UPDATE USAGE + DEVICE
-        // ----------------------------------------
+        // ========================================
+        // UPDATE USAGE
+        // ========================================
 
         const newUsageCount =
             Number(license.usage_count || 0) + 1;
@@ -193,42 +289,75 @@ module.exports = async (req, res) => {
             usage_count: newUsageCount
         };
 
+        // ========================================
+        // UPDATE LICENSE
+        // ========================================
+
         const updateUrl =
             `${supabaseUrl}/rest/v1/licenses?id=eq.${license.id}`;
 
-        const updateResponse = await fetch(updateUrl, {
-            method: 'PATCH',
-            headers: {
-                ...headers,
-                Prefer: 'return=minimal'
-            },
-            body: JSON.stringify(updateData)
-        });
+        const updateResponse =
+            await fetch(
+                updateUrl,
+                {
+                    method: 'PATCH',
+
+                    headers: {
+                        ...headers,
+                        Prefer: 'return=minimal'
+                    },
+
+                    body:
+                        JSON.stringify(updateData)
+                }
+            );
 
         if (!updateResponse.ok) {
+
+            const updateError =
+                await updateResponse.text()
+                    .catch(() => '');
+
+            console.error(
+                'License update error:',
+                updateError
+            );
+
             return res.status(500).json({
                 active: false,
-                message: 'Could not update license information.'
+                message:
+                    'Could not update license information.'
             });
         }
 
-        // ----------------------------------------
+        // ========================================
         // LICENSE ACTIVE
-        // ----------------------------------------
+        // ========================================
 
         return res.status(200).json({
+
             active: true,
-            message: 'License is active!',
 
-            client_name: license.client_name || '',
+            message:
+                'License is active!',
 
-            starts_at: license.starts_at,
-            expires_at: license.expires_at,
+            client_name:
+                license.client_name || '',
 
-            max_devices: maxDevices,
-            device_count: newDeviceCount,
+            starts_at:
+                license.starts_at,
 
-            usage_count: newUsageCount
+            expires_at:
+                license.expires_at,
+
+            max_devices:
+                maxDevices,
+
+            device_count:
+                newDeviceCount,
+
+            usage_count:
+                newUsageCount
         });
 
     } catch (error) {
@@ -240,7 +369,8 @@ module.exports = async (req, res) => {
 
         return res.status(500).json({
             active: false,
-            message: 'Internal server error.'
+            message:
+                'Internal server error.'
         });
     }
 };
