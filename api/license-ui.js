@@ -35,7 +35,7 @@ button{border:0;color:#fff;font-weight:700;background:linear-gradient(135deg,#00
 </div>
 <script>
 const DEVICE_ID = ${JSON.stringify(deviceId)};
-const API = "/api/verify";
+const API = "https://ads-license-server.vercel.app/api/verify";
 const statusEl = document.getElementById("status");
 const keyEl = document.getElementById("key");
 const btn = document.getElementById("verify");
